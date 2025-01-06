@@ -12,6 +12,24 @@ print(data.head())
 data = data.drop(columns=['Crm Cd 1', 'Crm Cd 2', 'Crm Cd 3', 'Crm Cd 4', 'LAT', 'LON', 'Cross Street', 'Mocodes'])
 
 # Funkcje pomocnicze
+# Generowanie pełnego wymiaru czasu
+def generate_full_time_dimension():
+    time_data = []
+    for hour in range(24):
+        for minute in range(60):
+            time_obj = {
+                'Hour': hour,
+                'Minute': minute,
+                'Time_Of_Day': (
+                    'Noc' if hour < 6 else
+                    'Poranek' if hour < 12 else
+                    'Popołudnie' if hour < 18 else
+                    'Wieczór'
+                )
+            }
+            time_data.append(time_obj)
+    return pd.DataFrame(time_data)
+
 # Funkcja do generowania pełnej tabeli wymiaru daty
 def generate_full_date_dimension(start_year, end_year):
     start_date = datetime(start_year, 1, 1)
@@ -68,8 +86,7 @@ date_occ_dict = dict(zip(date_occ_mapping['Full_Date'], date_occ_mapping['Date_I
 data['Date_Occ_ID'] = data['DATE OCC'].map(lambda x: date_occ_dict.get(x, None))
 
 # Wymiar Czas
-time_occ = data['TIME OCC'].apply(extract_time_components)
-dim_time_occ = pd.DataFrame(time_occ.tolist()).drop_duplicates().reset_index(drop=True)
+dim_time_occ = generate_full_time_dimension()
 dim_time_occ['Time_ID'] = range(1, len(dim_time_occ) + 1)
 
 # Dodanie kolumny Full_Time dla mapowania
@@ -89,6 +106,7 @@ data['Time_ID'] = data['Full_Time'].map(lambda x: time_occ_dict.get(x, None))
 
 # Usunięcie pomocniczej kolumny Full_Time
 data.drop(columns=['Full_Time'], inplace=True)
+dim_time_occ.drop(columns=['Full_Time'], inplace=True)
 
 # Wymiar Obszar
 dim_area = data[['AREA', 'AREA NAME', 'Rpt Dist No']].drop_duplicates().reset_index(drop=True)
