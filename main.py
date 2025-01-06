@@ -1,5 +1,5 @@
 import pandas as pd
-from datetime import datetime
+from datetime import datetime, timedelta
 from sqlalchemy import create_engine, text
 
 # Wczytaj plik CSV
@@ -12,6 +12,26 @@ print(data.head())
 data = data.drop(columns=['Crm Cd 1', 'Crm Cd 2', 'Crm Cd 3', 'Crm Cd 4', 'LAT', 'LON', 'Cross Street', 'Mocodes'])
 
 # Funkcje pomocnicze
+# Funkcja do generowania pełnej tabeli wymiaru daty
+def generate_full_date_dimension(start_year, end_year):
+    start_date = datetime(start_year, 1, 1)
+    end_date = datetime(end_year, 12, 31)
+    all_dates = []
+
+    current_date = start_date
+    while current_date <= end_date:
+        all_dates.append({
+            'Full_Date': current_date,
+            'Year': current_date.year,
+            'Month': current_date.month,
+            'Day': current_date.day,
+            'Weekday': current_date.strftime('%A'),
+            'Quarter': (current_date.month - 1) // 3 + 1,
+        })
+        current_date += timedelta(days=1)
+
+    return pd.DataFrame(all_dates)
+
 def extract_date_components(date_str):
     date_obj = datetime.strptime(date_str, '%m/%d/%Y %I:%M:%S %p')
     return {
@@ -30,24 +50,19 @@ def extract_time_components(time_int):
 
 # Wymiary
 # Wymiar Data
-date_rptd = data['Date Rptd'].apply(extract_date_components)
-dim_date_rptd = pd.DataFrame(date_rptd.tolist()).drop_duplicates().reset_index(drop=True)
-dim_date_rptd['Date_ID'] = range(1, len(dim_date_rptd) + 1)
-
-date_occ = data['DATE OCC'].apply(extract_date_components)
-dim_date_occ = pd.DataFrame(date_occ.tolist()).drop_duplicates().reset_index(drop=True)
-dim_date_occ['Date_ID'] = range(1, len(dim_date_occ) + 1)
+dim_date = generate_full_date_dimension(2020, 2023)
+dim_date['Date_ID'] = range(1, len(dim_date) + 1)
 
 # Tworzenie mapowania dla `Date Rptd`
 data['Date Rptd'] = pd.to_datetime(data['Date Rptd'], format='%m/%d/%Y %I:%M:%S %p')
-date_rptd_mapping = dim_date_rptd[['Date_ID', 'Year', 'Month', 'Day']]
+date_rptd_mapping = dim_date[['Date_ID', 'Year', 'Month', 'Day']]
 date_rptd_mapping['Full_Date'] = pd.to_datetime(date_rptd_mapping[['Year', 'Month', 'Day']])
 date_rptd_dict = dict(zip(date_rptd_mapping['Full_Date'], date_rptd_mapping['Date_ID']))
 data['Date_Rptd_ID'] = data['Date Rptd'].map(lambda x: date_rptd_dict.get(x, None))
 
 # Tworzenie mapowania dla `DATE OCC`
 data['DATE OCC'] = pd.to_datetime(data['DATE OCC'], format='%m/%d/%Y %I:%M:%S %p')
-date_occ_mapping = dim_date_occ[['Date_ID', 'Year', 'Month', 'Day']]
+date_occ_mapping = dim_date[['Date_ID', 'Year', 'Month', 'Day']]
 date_occ_mapping['Full_Date'] = pd.to_datetime(date_occ_mapping[['Year', 'Month', 'Day']])
 date_occ_dict = dict(zip(date_occ_mapping['Full_Date'], date_occ_mapping['Date_ID']))
 data['Date_Occ_ID'] = data['DATE OCC'].map(lambda x: date_occ_dict.get(x, None))
@@ -114,8 +129,8 @@ print(data.columns)
 print(data.dtypes)
 
 # Tabela faktów
-fact_table = data.merge(dim_date_rptd, left_on='Date_Rptd_ID', right_on='Date_ID', how='left') \
-                 .merge(dim_date_occ, left_on='Date_Occ_ID', right_on='Date_ID', how='left') \
+fact_table = data.merge(dim_date, left_on='Date_Rptd_ID', right_on='Date_ID', how='left') \
+                 .merge(dim_date, left_on='Date_Occ_ID', right_on='Date_ID', how='left') \
                  .merge(dim_time_occ, left_on='Time_ID', right_on='Time_ID', how='left') \
                  .merge(dim_area, left_on=['AREA', 'AREA NAME', 'Rpt Dist No'], right_on=['Area_Code', 'Area_Name', 'Rpt_Dist_No'], how='left') \
                  .merge(dim_victim, left_on=['Vict Age', 'Vict Sex', 'Vict Descent'], right_on=['Vict_Age', 'Vict_Sex', 'Vict_Descent'], how='left') \
@@ -147,7 +162,7 @@ print(fact_table.columns)
 engine = create_engine('mssql+pyodbc://conv:conv@localhost:1433/PHD?driver=ODBC+Driver+17+for+SQL+Server')
 
 fact_table.to_sql('Fact_Incidents', engine, index=False, if_exists='replace')
-dim_date_rptd.to_sql('Dim_Date', engine, index=False, if_exists='replace')
+dim_date.to_sql('Dim_Date', engine, index=False, if_exists='replace')
 dim_time_occ.to_sql('Dim_Time', engine, index=False, if_exists='replace')
 dim_area.to_sql('Dim_Area', engine, index=False, if_exists='replace')
 dim_crime.to_sql('Dim_Crime', engine, index=False, if_exists='replace')
