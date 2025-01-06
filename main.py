@@ -3,7 +3,13 @@ from datetime import datetime
 from sqlalchemy import create_engine, text
 
 # Wczytaj plik CSV
-data = pd.read_csv('data.csv')
+data = pd.read_csv('data_full.csv', sep=',')
+
+pd.set_option('display.max_columns', None)
+pd.set_option('display.max_rows', 10)
+print(data.head())
+
+data = data.drop(columns=['Crm Cd 1', 'Crm Cd 2', 'Crm Cd 3', 'Crm Cd 4', 'LAT', 'LON', 'Cross Street', 'Mocodes'])
 
 # Funkcje pomocnicze
 def extract_date_components(date_str):
@@ -51,9 +57,27 @@ time_occ = data['TIME OCC'].apply(extract_time_components)
 dim_time_occ = pd.DataFrame(time_occ.tolist()).drop_duplicates().reset_index(drop=True)
 dim_time_occ['Time_ID'] = range(1, len(dim_time_occ) + 1)
 
+# Dodanie kolumny Full_Time dla mapowania
+dim_time_occ['Full_Time'] = dim_time_occ.apply(
+    lambda row: f"{int(row['Hour']):02d}:{int(row['Minute']):02d}", axis=1
+)
+
+# Tworzenie słownika mapowania Time_ID
+time_occ_dict = dict(zip(dim_time_occ['Full_Time'], dim_time_occ['Time_ID']))
+
+# Przypisanie Time_ID do danych
+data['Full_Time'] = data['TIME OCC'].astype(str).str.zfill(4).apply(
+    lambda x: f"{int(x[:2]):02d}:{int(x[2:]):02d}"  # Konwersja formatu 4-cyfrowego na HH:MM
+)
+print("Full time:\n"+str(data['Full_Time']))
+data['Time_ID'] = data['Full_Time'].map(lambda x: time_occ_dict.get(x, None))
+
+# Usunięcie pomocniczej kolumny Full_Time
+data.drop(columns=['Full_Time'], inplace=True)
+
 # Wymiar Obszar
 dim_area = data[['AREA', 'AREA NAME', 'Rpt Dist No']].drop_duplicates().reset_index(drop=True)
-dim_area.rename(columns={'AREA': 'Area_Code', 'AREA NAME': 'Area_Name'}, inplace=True)
+dim_area.rename(columns={'AREA': 'Area_Code', 'AREA NAME': 'Area_Name', 'Rpt Dist No': 'Rpt_Dist_No'}, inplace=True)
 dim_area['Area_ID'] = range(1, len(dim_area) + 1)
 
 # Wymiar Typ przestępstwa
@@ -82,27 +106,28 @@ dim_status.rename(columns={'Status Desc': 'Status_Desc'}, inplace=True)
 dim_status['Status_ID'] = range(1, len(dim_status) + 1)
 
 # Wymiar Lokalizacja
-dim_location = data[['LOCATION', 'LAT', 'LON']].drop_duplicates().reset_index(drop=True)
+dim_location = data[['LOCATION']].drop_duplicates().reset_index(drop=True)
 dim_location['Location_ID'] = range(1, len(dim_location) + 1)
 
-print("Facts: \n" + str(data))
+print("Fakty przed laczeniem: \n" + str(data))
 print(data.columns)
-#print("DATY: \n" + str(dim_date_rptd))
+print(data.dtypes)
 
 # Tabela faktów
-fact_table = data.merge(dim_date_rptd, left_on='Date_Rptd_ID', right_on='Date_ID') \
-                 .merge(dim_date_occ, left_on='Date_Occ_ID', right_on='Date_ID') \
-                 .merge(dim_time_occ, left_on='TIME OCC', right_index=True) \
-                 .merge(dim_area, left_on='AREA', right_on='Area_Code') \
-                 .merge(dim_victim, left_on=['Vict Age', 'Vict Sex', 'Vict Descent'], right_on=['Vict_Age', 'Vict_Sex', 'Vict_Descent']) \
-                 .merge(dim_premis, left_on='Premis Cd', right_on='Premis_Cd') \
-                 .merge(dim_weapon, left_on='Weapon Used Cd', right_on='Weapon_Used_Cd') \
-                 .merge(dim_status, left_on='Status', right_on='Status') \
-                 .merge(dim_location, left_on='LOCATION', right_on='LOCATION') \
-                 .merge(dim_crime, left_on='Crm Cd', right_on='Crm_Cd')
+fact_table = data.merge(dim_date_rptd, left_on='Date_Rptd_ID', right_on='Date_ID', how='left') \
+                 .merge(dim_date_occ, left_on='Date_Occ_ID', right_on='Date_ID', how='left') \
+                 .merge(dim_time_occ, left_on='Time_ID', right_on='Time_ID', how='left') \
+                 .merge(dim_area, left_on=['AREA', 'AREA NAME', 'Rpt Dist No'], right_on=['Area_Code', 'Area_Name', 'Rpt_Dist_No'], how='left') \
+                 .merge(dim_victim, left_on=['Vict Age', 'Vict Sex', 'Vict Descent'], right_on=['Vict_Age', 'Vict_Sex', 'Vict_Descent'], how='left') \
+                 .merge(dim_premis, left_on='Premis Cd', right_on='Premis_Cd', how='left') \
+                 .merge(dim_weapon, left_on='Weapon Used Cd', right_on='Weapon_Used_Cd', how='left') \
+                 .merge(dim_status, left_on='Status', right_on='Status', how='left') \
+                 .merge(dim_location, left_on='LOCATION', right_on='LOCATION', how='left') \
+                 .merge(dim_crime, left_on='Crm Cd', right_on='Crm_Cd', how='left')
 
-print("Dostępne kolumny w fact_table przed wyborem:")
+print("Dostępne kolumny w fact_table po skonczeniu laczenia:")
 print(fact_table.columns)
+print(fact_table.dtypes)
 
 fact_table = fact_table[['DR_NO', 'Date_Rptd_ID', 'Date_Occ_ID', 'Time_ID', 'Area_ID', 'Victim_ID',
                          'Premis_ID', 'Weapon_ID', 'Status_ID', 'Location_ID', 'Crm_Cd_ID']]
@@ -119,7 +144,7 @@ print(fact_table.columns)
 #print("DATY: \n" + str(dim_date_rptd))
 
 # Zapis danych do bazy danych
-engine = create_engine('mssql+pyodbc://conv:conv@localhost:1433/dataczka?driver=ODBC+Driver+17+for+SQL+Server')
+engine = create_engine('mssql+pyodbc://conv:conv@localhost:1433/PHD?driver=ODBC+Driver+17+for+SQL+Server')
 
 fact_table.to_sql('Fact_Incidents', engine, index=False, if_exists='replace')
 dim_date_rptd.to_sql('Dim_Date', engine, index=False, if_exists='replace')
