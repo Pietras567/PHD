@@ -1,6 +1,7 @@
 import pandas as pd
 from datetime import datetime, timedelta
 from sqlalchemy import create_engine, text
+import re
 
 # Wczytaj plik CSV
 data = pd.read_csv('data_full.csv', sep=',')
@@ -12,6 +13,16 @@ print(data.head())
 data = data.drop(columns=['Crm Cd 1', 'Crm Cd 2', 'Crm Cd 3', 'Crm Cd 4', 'LAT', 'LON', 'Cross Street', 'Mocodes'])
 
 # Funkcje pomocnicze
+# Funkcja do ekstrakcji nazw ulic
+def extract_street_name(location):
+    if pd.notnull(location):  # Sprawdź, czy wartość nie jest pusta
+        # Usuwanie numeru oraz kierunku z początku adresu
+        street_name = re.sub(r'^\d+\s?[A-Za-z]{0,2}\s?', '', location)
+        # Usuwanie wielokrotnych spacji
+        street_name = re.sub(r'\s+', ' ', street_name).strip()
+        return street_name
+    return location
+
 # Generowanie pełnego wymiaru czasu
 def generate_full_time_dimension():
     time_data = []
@@ -85,6 +96,11 @@ date_occ_mapping['Full_Date'] = pd.to_datetime(date_occ_mapping[['Year', 'Month'
 date_occ_dict = dict(zip(date_occ_mapping['Full_Date'], date_occ_mapping['Date_ID']))
 data['Date_Occ_ID'] = data['DATE OCC'].map(lambda x: date_occ_dict.get(x, None))
 
+dim_date.drop(columns=['Full_Date'], inplace=True)
+
+data['Date_Rptd_ID'] = data['Date Rptd'].map(date_rptd_dict).astype('Int64')
+data['Date_Occ_ID'] = data['DATE OCC'].map(date_occ_dict).astype('Int64')
+
 # Wymiar Czas
 dim_time_occ = generate_full_time_dimension()
 dim_time_occ['Time_ID'] = range(1, len(dim_time_occ) + 1)
@@ -139,6 +155,7 @@ dim_status.rename(columns={'Status Desc': 'Status_Desc'}, inplace=True)
 dim_status['Status_ID'] = range(1, len(dim_status) + 1)
 
 # Wymiar Lokalizacja
+data['LOCATION'] = data['LOCATION'].apply(extract_street_name)
 dim_location = data[['LOCATION']].drop_duplicates().reset_index(drop=True)
 dim_location['Location_ID'] = range(1, len(dim_location) + 1)
 
@@ -147,8 +164,8 @@ print(data.columns)
 print(data.dtypes)
 
 # Tabela faktów
-fact_table = data.merge(dim_date, left_on='Date_Rptd_ID', right_on='Date_ID', how='left') \
-                 .merge(dim_date, left_on='Date_Occ_ID', right_on='Date_ID', how='left') \
+fact_table = data.merge(dim_date, left_on='Date_Rptd_ID', right_on='Date_ID', how='inner') \
+                 .merge(dim_date, left_on='Date_Occ_ID', right_on='Date_ID', how='inner') \
                  .merge(dim_time_occ, left_on='Time_ID', right_on='Time_ID', how='left') \
                  .merge(dim_area, left_on=['AREA', 'AREA NAME', 'Rpt Dist No'], right_on=['Area_Code', 'Area_Name', 'Rpt_Dist_No'], how='left') \
                  .merge(dim_victim, left_on=['Vict Age', 'Vict Sex', 'Vict Descent'], right_on=['Vict_Age', 'Vict_Sex', 'Vict_Descent'], how='left') \
