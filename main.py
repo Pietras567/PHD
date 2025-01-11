@@ -8,7 +8,6 @@ data = pd.read_csv('data_full.csv', sep=',')
 
 pd.set_option('display.max_columns', None)
 pd.set_option('display.max_rows', 10)
-print(data.head())
 
 data = data.drop(columns=['Crm Cd 1', 'Crm Cd 2', 'Crm Cd 3', 'Crm Cd 4', 'LAT', 'LON', 'Cross Street', 'Mocodes'])
 
@@ -135,7 +134,7 @@ time_occ_dict = dict(zip(dim_time_occ['Full_Time'], dim_time_occ['Time_ID']))
 data['Full_Time'] = data['TIME OCC'].astype(str).str.zfill(4).apply(
     lambda x: f"{int(x[:2]):02d}:{int(x[2:]):02d}"  # Konwersja formatu 4-cyfrowego na HH:MM
 )
-print("Full time:\n"+str(data['Full_Time']))
+
 data['Time_ID'] = data['Full_Time'].map(lambda x: time_occ_dict.get(x, None))
 
 # Usunięcie pomocniczej kolumny Full_Time
@@ -180,10 +179,6 @@ data['LOCATION'] = data['LOCATION'].apply(extract_street_name)
 dim_location = data[['LOCATION']].drop_duplicates().reset_index(drop=True)
 dim_location['Location_ID'] = range(1, len(dim_location) + 1)
 
-print("Fakty przed laczeniem: \n" + str(data))
-print(data.columns)
-print(data.dtypes)
-
 # Tabela faktów
 fact_table = data.merge(dim_date, left_on='Date_Rptd_ID', right_on='Date_ID', how='inner') \
                  .merge(dim_date, left_on='Date_Occ_ID', right_on='Date_ID', how='inner') \
@@ -196,9 +191,6 @@ fact_table = data.merge(dim_date, left_on='Date_Rptd_ID', right_on='Date_ID', ho
                  .merge(dim_location, left_on='LOCATION', right_on='LOCATION', how='left') \
                  .merge(dim_crime, left_on='Crm Cd', right_on='Crm_Cd', how='left')
 
-print("Dostępne kolumny w fact_table po skonczeniu laczenia:")
-print(fact_table.columns)
-print(fact_table.dtypes)
 
 fact_table = fact_table[['DR_NO', 'Date_Rptd_ID', 'Date_Occ_ID', 'Time_ID', 'Area_ID', 'Victim_ID',
                          'Premis_ID', 'Weapon_ID', 'Status_ID', 'Location_ID', 'Crm_Cd_ID']]
@@ -209,10 +201,6 @@ fact_table.rename(columns={
     'Crm_Cd': 'Crm_Cd_ID',
 }, inplace=True)
 fact_table['Fact_ID'] = range(1, len(fact_table) + 1)
-
-print("Facts: \n" + str(fact_table))
-print(fact_table.columns)
-#print("DATY: \n" + str(dim_date_rptd))
 
 # Zapis danych do bazy danych
 engine = create_engine('mssql+pyodbc://conv:conv@localhost:1433/PHD?driver=ODBC+Driver+17+for+SQL+Server')
