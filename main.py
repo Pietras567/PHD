@@ -13,6 +13,24 @@ print(data.head())
 data = data.drop(columns=['Crm Cd 1', 'Crm Cd 2', 'Crm Cd 3', 'Crm Cd 4', 'LAT', 'LON', 'Cross Street', 'Mocodes'])
 
 # Funkcje pomocnicze
+# Funkcja do przypisywania przedziału wiekowego
+def assign_age_range(age):
+    if pd.isnull(age):  # Obsługa brakujących wartości
+        return "Nieznany"
+    age = int(age)
+    if age < 18:
+        return "0-17"
+    elif age < 30:
+        return "18-29"
+    elif age < 45:
+        return "30-40"
+    elif age < 60:
+        return "40-59"
+    elif age < 75:
+        return "60-74"
+    else:
+        return "75+"
+
 # Funkcja do ekstrakcji nazw ulic
 def extract_street_name(location):
     if pd.notnull(location):  # Sprawdź, czy wartość nie jest pusta
@@ -135,6 +153,9 @@ dim_crime.rename(columns={'Crm Cd': 'Crm_Cd', 'Crm Cd Desc': 'Crm_Cd_Desc', 'Par
 dim_crime['Crm_Cd_ID'] = range(1, len(dim_crime) + 1)
 
 # Wymiar Ofiary
+# Zamiana wartości w kolumnie Vict Age na przedziały
+data['Vict Age'] = data['Vict Age'].apply(assign_age_range)
+
 dim_victim = data[['Vict Age', 'Vict Sex', 'Vict Descent']].drop_duplicates().reset_index(drop=True)
 dim_victim.rename(columns={'Vict Age': 'Vict_Age', 'Vict Sex': 'Vict_Sex', 'Vict Descent': 'Vict_Descent'}, inplace=True)
 dim_victim['Victim_ID'] = range(1, len(dim_victim) + 1)
